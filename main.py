@@ -4,36 +4,48 @@ import requests
 import schedule
 import time
 import threading
-import asyncio  # <-- ✅ THIS LINE IS REQUIRED
-from datetime import datetime
+import asyncio
+from datetime import datetime, timezone
 from collections import deque
 from telegram import Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-
 # === CONFIG ===
-TELEGRAM_TOKEN = '7741029568:AAGhAm5FEYTcVzZuPPMrOa5P9W2_-bFQq50'
-NEWSAPI_KEY = 'fbe66da57eef4b0993a13c3572457d06'
-SECOND_BOT_TOKEN = '7635757636:AAFwFOjtKWF3XFZ0VYOEs8ICMnbVhLHWf_8'
-NOTIFY_CHAT_ID = '897358644'
+TELEGRAM_TOKEN = 'YOUR_MAIN_BOT_TOKEN'
+NEWSAPI_KEY = 'YOUR_NEWSAPI_KEY'
+SECOND_BOT_TOKEN = 'YOUR_SECOND_BOT_TOKEN'
+NOTIFY_CHAT_ID = 'YOUR_ADMIN_USER_ID'
 SUBSCRIBERS_FILE = "subscribed_users.json"
+SENT_URLS_FILE = "sent_urls.json"
 
 # === LOAD & SAVE SUBSCRIBERS ===
 def load_subscribers():
     try:
         with open(SUBSCRIBERS_FILE, "r") as f:
             return set(json.load(f))
-    except (FileNotFoundError, json.JSONDecodeError):
+    except:
         return set()
 
 def save_subscribers(subscribers):
     with open(SUBSCRIBERS_FILE, "w") as f:
         json.dump(list(subscribers), f)
 
+# === LOAD & SAVE SENT URL HISTORY ===
+def load_sent_urls():
+    try:
+        with open(SENT_URLS_FILE, "r") as f:
+            return set(json.load(f))
+    except:
+        return set()
+
+def save_sent_urls(urls):
+    with open(SENT_URLS_FILE, "w") as f:
+        json.dump(list(urls), f)
+
 # === GLOBALS ===
 subscribed_users = load_subscribers()
-sent_news_deque = deque(maxlen=500)
-sent_news_urls = set()
+sent_news_urls = load_sent_urls()
+sent_news_deque = deque(sent_news_urls, maxlen=500)
 
 # === BOTS ===
 main_bot = Bot(token=TELEGRAM_TOKEN)
@@ -47,6 +59,7 @@ def remember_url(url):
         if len(sent_news_deque) == sent_news_deque.maxlen:
             oldest = sent_news_deque.popleft()
             sent_news_urls.discard(oldest)
+        save_sent_urls(sent_news_urls)
 
 # === FETCH NEWS ===
 def get_all_financial_news():
@@ -55,12 +68,11 @@ def get_all_financial_news():
         "bonds OR central bank OR RBI OR Fed OR crypto OR bitcoin OR ethereum OR "
         "tariffs OR monetary policy OR fiscal policy OR economy OR GDP OR recession"
     )
-    today_str = datetime.utcnow().strftime("%Y-%m-%d")  # Use UTC date
-
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     url = (
         f"https://newsapi.org/v2/everything?"
         f"q={query}&"
-        f"from={today_str}&"  # <-- Filter from today's date
+        f"from={today_str}&"
         f"language=en&"
         f"pageSize=5&"
         f"sortBy=publishedAt&"
@@ -69,6 +81,8 @@ def get_all_financial_news():
 
     response = requests.get(url)
     articles = response.json().get("articles", [])
+
+    print(f"⏰ Checking news at {datetime.now()} — {len(articles)} articles found")
 
     if not articles:
         return None
