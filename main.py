@@ -11,10 +11,10 @@ from telegram import Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # === CONFIG ===
-TELEGRAM_TOKEN = 'YOUR_MAIN_BOT_TOKEN'
-NEWSAPI_KEY = 'YOUR_NEWSAPI_KEY'
-SECOND_BOT_TOKEN = 'YOUR_SECOND_BOT_TOKEN'
-NOTIFY_CHAT_ID = 'YOUR_ADMIN_USER_ID'
+TELEGRAM_TOKEN = '7741029568:AAGhAm5FEYTcVzZuPPMrOa5P9W2_-bFQq50'
+SECOND_BOT_TOKEN = '7635757636:AAFwFOjtKWF3XFZ0VYOEs8ICMnbVhLHWf_8'
+NOTIFY_CHAT_ID = '897358644'  # your Telegram user ID or admin group ID
+NEWSAPI_KEY = 'fbe66da57eef4b0993a13c3572457d06'
 SUBSCRIBERS_FILE = "subscribed_users.json"
 SENT_URLS_FILE = "sent_urls.json"
 
