@@ -12,40 +12,27 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # === CONFIG ===
 TELEGRAM_TOKEN = '7741029568:AAGhAm5FEYTcVzZuPPMrOa5P9W2_-bFQq50'
-SECOND_BOT_TOKEN = '7635757636:AAFwFOjtKWF3XFZ0VYOEs8ICMnbVhLHWf_8'
-NOTIFY_CHAT_ID = '897358644'  # your Telegram user ID or admin group ID
 NEWSAPI_KEY = 'fbe66da57eef4b0993a13c3572457d06'
+SECOND_BOT_TOKEN = '7635757636:AAFwFOjtKWF3XFZ0VYOEs8ICMnbVhLHWf_8'
+NOTIFY_CHAT_ID = '897358644'
 SUBSCRIBERS_FILE = "subscribed_users.json"
-SENT_URLS_FILE = "sent_urls.json"
 
 # === LOAD & SAVE SUBSCRIBERS ===
 def load_subscribers():
     try:
         with open(SUBSCRIBERS_FILE, "r") as f:
             return set(json.load(f))
-    except:
+    except (FileNotFoundError, json.JSONDecodeError):
         return set()
 
 def save_subscribers(subscribers):
     with open(SUBSCRIBERS_FILE, "w") as f:
         json.dump(list(subscribers), f)
 
-# === LOAD & SAVE SENT URL HISTORY ===
-def load_sent_urls():
-    try:
-        with open(SENT_URLS_FILE, "r") as f:
-            return set(json.load(f))
-    except:
-        return set()
-
-def save_sent_urls(urls):
-    with open(SENT_URLS_FILE, "w") as f:
-        json.dump(list(urls), f)
-
 # === GLOBALS ===
 subscribed_users = load_subscribers()
-sent_news_urls = load_sent_urls()
-sent_news_deque = deque(sent_news_urls, maxlen=500)
+sent_news_deque = deque(maxlen=500)
+sent_news_urls = set()
 
 # === BOTS ===
 main_bot = Bot(token=TELEGRAM_TOKEN)
@@ -59,9 +46,8 @@ def remember_url(url):
         if len(sent_news_deque) == sent_news_deque.maxlen:
             oldest = sent_news_deque.popleft()
             sent_news_urls.discard(oldest)
-        save_sent_urls(sent_news_urls)
 
-# === FETCH NEWS ===
+# === SEND NEWS TO USER ===
 async def send_daily_update(chat_id):
     try:
         query = (
@@ -86,7 +72,6 @@ async def send_daily_update(chat_id):
 
         response = requests.get(url)
         articles = response.json().get("articles", [])
-
         print(f"⏰ Checking news at {now} — {len(articles)} articles found")
 
         if not articles:
@@ -125,24 +110,6 @@ async def send_daily_update(chat_id):
         if sent_count == 0:
             print("⚠️ No unseen news articles to send.")
 
-    except Exception as e:
-        print("❌ Update error:", e)
-
-
-# === SEND NEWS TO USER ===
-async def send_daily_update(chat_id):
-    try:
-        news = get_all_financial_news()
-        print(f"✅ Sending update to {chat_id}")
-        if news:
-            await main_bot.send_message(
-                chat_id=chat_id,
-                text=news,
-                parse_mode="Markdown",
-                disable_web_page_preview=True
-            )
-        else:
-            print("⚠️ No new news to send.")
     except Exception as e:
         print("❌ Update error:", e)
 
