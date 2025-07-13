@@ -69,7 +69,6 @@ def safe_md(text: str) -> str:
             .replace(">", "\\>")
             .replace("#", "\\#")
             .replace("+", "\\+")
-            .replace("-", "\\-")
             .replace("=", "\\=")
             .replace("|", "\\|")
             .replace("{", "\\{")
@@ -77,6 +76,8 @@ def safe_md(text: str) -> str:
             .replace(".", "\\.")
             .replace("!", "\\!")
     )
+
+
 
 # === CATEGORIES ===
 TOP_COMPANIES = ["Apple", "Microsoft", "Amazon", "Tesla", "Google", "Meta", "Nvidia", "Netflix", "Intel", "IBM"]
