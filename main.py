@@ -145,15 +145,22 @@ async def scheduled_job(app: Application):
         await asyncio.sleep(300)  # 5 minutes
 
 # === MAIN ===
-async def main():
+def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("update", manual_update))
 
-    # Start background scheduler job
-    app.create_task(scheduled_job(app))
+    # Start background scheduler job AFTER app is running
+    async def on_startup(app):
+        app.create_task(scheduled_job(app))  # ✅ this won't trigger early warnings
 
-    await app.run_polling()
+    app.post_init = on_startup
+
+    app.run_polling()  # ✅ no asyncio.run, no await
+
+if __name__ == "__main__":
+    main()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
