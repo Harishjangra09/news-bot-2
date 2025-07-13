@@ -113,6 +113,7 @@ async def send_daily_update(chat_id):
             simplified = description.strip().split(".")[0]  # first sentence as summary
 
             # Escape markdown special characters
+                        # Escape markdown special characters
             title = esc(title, version=2)
             description = esc(description, version=2)
             source = esc(source, version=2)
@@ -122,20 +123,20 @@ async def send_daily_update(chat_id):
             message = (
                 f"{category}\n"
                 f"📌 *{title}*\n"
-                f"📰 _{source}_ | 🗓️ {published}\n\n"
+                f"📰 _{source}_ \\| 🗓️ {published}\n\n"
                 f"🧠 *Summary:* {description}\n\n"
                 f"🔗 [Read Full Article]({article_url})"
             )
 
-
             await main_bot.send_message(
                 chat_id=chat_id,
                 text=message,
-                parse_mode="MarkdownV2",
+                parse_mode="MarkdownV2",  # ⚠️ use MarkdownV2
                 disable_web_page_preview=True
             )
 
             remember_url(article_url)
+
 
     except Exception as e:
         logger.error(f"❌ Error sending update: {e}")
