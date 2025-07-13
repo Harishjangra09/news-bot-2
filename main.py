@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 from collections import deque
 from telegram import Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Application
-from telegram.helpers import escape_markdown
+from telegram.helpers import escape_markdown as esc
 import logging
 from dotenv import load_dotenv
 
@@ -113,19 +113,20 @@ async def send_daily_update(chat_id):
             simplified = description.strip().split(".")[0]  # first sentence as summary
 
             # Escape markdown special characters
-            title = escape_markdown(title, version=2)
-            description = escape_markdown(simplified, version=2)
-            source = escape_markdown(source, version=2)
-            article_url = escape_markdown(article_url, version=2)
-            category = escape_markdown(category, version=2)
+            title = esc(title, version=2)
+            description = esc(description, version=2)
+            source = esc(source, version=2)
+            article_url = esc(article_url, version=2)
+            category = esc(category, version=2)
 
             message = (
-                f"{category}\n\n"
+                f"{category}\n"
                 f"📌 *{title}*\n"
                 f"📰 _{source}_ | 🗓️ {published}\n\n"
                 f"🧠 *Summary:* {description}\n\n"
                 f"🔗 [Read Full Article]({article_url})"
             )
+
 
             await main_bot.send_message(
                 chat_id=chat_id,
