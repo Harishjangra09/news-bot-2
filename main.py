@@ -23,7 +23,16 @@ SUBSCRIBERS_FILE = os.getenv("SUBSCRIBERS_FILE", "subscribed_users.json")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# === LOAD/SAVE SUBSCRIBERS ===
+# === GLOBAL STATE ===
+subscribed_users = set()
+sent_news_deque = deque(maxlen=500)
+sent_news_urls = set()
+
+# === BOTS ===
+main_bot = Bot(token=TELEGRAM_TOKEN)
+notify_bot = Bot(token=SECOND_BOT_TOKEN)
+
+# === HELPERS ===
 def load_subscribers():
     try:
         with open(SUBSCRIBERS_FILE, "r") as f:
@@ -35,15 +44,6 @@ def save_subscribers(subscribers):
     with open(SUBSCRIBERS_FILE, "w") as f:
         json.dump(list(subscribers), f)
 
-# === GLOBALS ===
-subscribed_users = load_subscribers()
-sent_news_deque = deque(maxlen=500)
-sent_news_urls = set()
-
-# === BOTS ===
-main_bot = Bot(token=TELEGRAM_TOKEN)
-notify_bot = Bot(token=SECOND_BOT_TOKEN)
-
 def remember_url(url):
     if url not in sent_news_urls:
         sent_news_urls.add(url)
@@ -51,6 +51,9 @@ def remember_url(url):
         if len(sent_news_deque) == sent_news_deque.maxlen:
             oldest = sent_news_deque.popleft()
             sent_news_urls.discard(oldest)
+
+def safe_md(text: str) -> str:
+    return esc(text or "", version=2)
 
 # === CATEGORIES ===
 TOP_COMPANIES = ["Apple", "Microsoft", "Amazon", "Tesla", "Google", "Meta", "Nvidia", "Netflix", "Intel", "IBM"]
@@ -104,25 +107,27 @@ async def send_daily_update(chat_id):
             if article_url in sent_news_urls:
                 continue
 
-            title = a.get("title", "No Title")
-            description = a.get("description", "No summary available.")
-            source = a.get("source", {}).get("name", "")
+            title_raw = a.get("title", "No Title")
+            description_raw = a.get("description", "No summary available.")
+            source_raw = a.get("source", {}).get("name", "")
             published = a.get("publishedAt", "")[:10]
-            category = classify_article(title, description)
 
-            # Escape all values for MarkdownV2
-            title = esc(title, version=2)
-            description = esc(description.strip().split(".")[0], version=2)  # summary = first sentence
-            source = esc(source, version=2)
-            article_url = esc(article_url, version=2)
-            category = esc(category, version=2)
+            category = classify_article(title_raw, description_raw)
+            summary = description_raw.strip().split(".")[0]
+
+            # Escape markdown-v2
+            title = safe_md(title_raw)
+            description = safe_md(summary)
+            source = safe_md(source_raw)
+            escaped_url = article_url.replace(")", "\\)").replace("(", "\\(")  # escape only for link()
+            category_md = safe_md(category)
 
             message = (
-                f"{category}\n"
+                f"{category_md}\n"
                 f"📌 *{title}*\n"
                 f"📰 _{source}_ \\| 🗓️ {published}\n\n"
                 f"🧠 *Summary:* {description}\n\n"
-                f"🔗 [Read Full Article]({article_url})"
+                f"🔗 [Read Full Article]({escaped_url})"
             )
 
             await main_bot.send_message(
@@ -165,24 +170,27 @@ async def manual_update(update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📡 Fetching latest updates...")
     await send_daily_update(chat_id=user_id)
 
-# === SCHEDULER ===
-async def scheduled_job(app: Application):
+# === SCHEDULED JOB ===
+async def scheduled_job():
     while True:
         logger.info("⏰ Running scheduled job")
         for user_id in subscribed_users:
             logger.info(f"🔁 Sending to {user_id}")
             await send_daily_update(chat_id=user_id)
-        await asyncio.sleep(300)
+        await asyncio.sleep(600)  # every 10 minutes
 
 # === MAIN ===
 def main():
+    global subscribed_users
+    subscribed_users = load_subscribers()
+
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("update", manual_update))
 
     async def on_startup(app):
-        await app.bot.delete_webhook()  # Clear any previous webhook if set
-        app.create_task(scheduled_job(app))
+        await app.bot.delete_webhook()
+        asyncio.create_task(scheduled_job())  # ✅ avoids warning
 
     app.post_init = on_startup
     app.run_polling()
