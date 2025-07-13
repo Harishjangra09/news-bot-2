@@ -2,11 +2,11 @@ import os
 import json
 import requests
 import asyncio
+import re
 from datetime import datetime, timezone, timedelta
 from collections import deque
 from telegram import Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Application
-from telegram.helpers import escape_markdown as esc
 import logging
 from dotenv import load_dotenv
 
@@ -54,30 +54,11 @@ def remember_url(url):
             sent_news_urls.discard(oldest)
 
 def safe_md(text: str) -> str:
+    """Escape MarkdownV2 special characters."""
     if not text:
         return ""
-    return (
-        text.replace("\\", "\\\\")
-            .replace("_", "\\_")
-            .replace("*", "\\*")
-            .replace("[", "\\[")
-            .replace("]", "\\]")
-            .replace("(", "\\(")
-            .replace(")", "\\)")
-            .replace("~", "\\~")
-            .replace("`", "\\`")
-            .replace(">", "\\>")
-            .replace("#", "\\#")
-            .replace("+", "\\+")
-            .replace("=", "\\=")
-            .replace("|", "\\|")
-            .replace("{", "\\{")
-            .replace("}", "\\}")
-            .replace(".", "\\.")
-            .replace("!", "\\!")
-    )
-
-
+    escape_chars = r'_*[\]()~`>#+=|{}.!-'
+    return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
 # === CATEGORIES ===
 TOP_COMPANIES = ["Apple", "Microsoft", "Amazon", "Tesla", "Google", "Meta", "Nvidia", "Netflix", "Intel", "IBM"]
@@ -122,17 +103,12 @@ async def send_daily_update(chat_id):
 
         now = datetime.now(timezone.utc)
         from_time = now - timedelta(hours=24)
-        from_time_str = from_time.isoformat()
-        to_time_str = now.isoformat()
-
         url = (
             f"https://newsapi.org/v2/everything?"
             f"q={query}&"
-            f"from={from_time_str}&to={to_time_str}&"
-            f"language=en&"
-            f"pageSize=20&"
-            f"sortBy=publishedAt&"
-            f"apiKey={NEWSAPI_KEY}"
+            f"from={from_time.isoformat()}&"
+            f"to={now.isoformat()}&"
+            f"language=en&pageSize=20&sortBy=publishedAt&apiKey={NEWSAPI_KEY}"
         )
 
         response = requests.get(url)
@@ -160,7 +136,7 @@ async def send_daily_update(chat_id):
             description = safe_md(summary)
             source = safe_md(source_raw)
             category_md = safe_md(category)
-            url_label = safe_md("Read Full Article")  # only label gets escaped
+            url_label = safe_md("Read Full Article")
 
             message = (
                 f"{category_md}\n"
@@ -224,7 +200,7 @@ async def scheduled_job():
                 await send_daily_update(chat_id=user_id)
             except Exception as e:
                 logger.error(f"❌ Failed to send to {user_id}: {e}")
-        await asyncio.sleep(600)  # 10 minutes
+        await asyncio.sleep(600)  # every 10 minutes
 
 # === MAIN ===
 def main():
@@ -237,7 +213,7 @@ def main():
     app.add_error_handler(error_handler)
 
     async def on_startup(app):
-        await app.bot.delete_webhook()
+        await app.bot.delete_webhook(drop_pending_updates=True)
         asyncio.create_task(scheduled_job())
 
     app.post_init = on_startup
