@@ -106,7 +106,7 @@ async def send_daily_update(chat_id):
         )
 
         now = datetime.now(timezone.utc)
-        from_time = now - timedelta(minutes=15)
+        from_time = now - timedelta(hours=1)
         url = (
             f"https://newsapi.org/v2/everything?q={query}&"
             f"from={from_time.isoformat()}&to={now.isoformat()}&"
@@ -118,7 +118,7 @@ async def send_daily_update(chat_id):
         logger.info(f"⏰ Checked at {now}, {len(articles)} articles found")
 
         if not articles:
-            await main_bot.send_message(chat_id=chat_id, text="⚠️ No new news in the last 15 minutes.")
+            await main_bot.send_message(chat_id=chat_id, text="⚠️ No new finance/economic news in the last hour.")
             return
 
         ALLOWED_CATEGORIES = [
@@ -129,7 +129,7 @@ async def send_daily_update(chat_id):
             "🇨🇦 *Economic News*"
         ]
 
-        BANNED_SOURCES = ["slickdeals", "buzzfeed", "espn", "goal.com", "vogue", "elle"]
+        BANNED_SOURCES = ["slickdeals", "espn", "goal.com", "vogue", "buzzfeed", "people.com"]
 
         for a in articles:
             article_url = a.get("url")
@@ -139,23 +139,23 @@ async def send_daily_update(chat_id):
             published_raw = a.get("publishedAt", "")
             source_raw = a.get("source", {}).get("name", "")
 
-            # Skip bad sources
+            # Skip banned sources
             if any(bad in source_raw.lower() for bad in BANNED_SOURCES):
                 continue
 
-            # Skip if published time is more than 20 mins old
+            # Parse and validate published time
             try:
-                published_time_dt = datetime.strptime(published_raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                if published_time_dt < now - timedelta(minutes=20):
+                published_dt = datetime.strptime(published_raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                if published_dt < now - timedelta(hours=1):
                     continue
             except Exception:
                 continue
 
-            # Skip already sent (based on URL or title)
+            # Skip if already sent
             if article_url in sent_news_urls or title_raw in sent_news_urls:
                 continue
 
-            # Classification and filtering
+            # Classify and filter category
             category = classify_article(title_raw, description_raw)
             if category not in ALLOWED_CATEGORIES:
                 continue
@@ -168,24 +168,24 @@ async def send_daily_update(chat_id):
                     origin_flag = flag
                     break
 
-            # Smart 100-word summary
+            # Build summary
             full_text = f"{description_raw} {content_raw}".strip()
             words = full_text.split()
             if len(words) < 10:
                 continue
             summary_raw = " ".join(words[:100]) + ("..." if len(words) > 100 else "")
 
-            # Markdown safe
+            # Escape Markdown
             title = safe_md(title_raw)
             summary = safe_md(summary_raw)
             source = safe_md(source_raw)
-            published_time_str = safe_md(published_time_dt.strftime("%Y-%m-%d %H:%M"))
+            pub_time = safe_md(published_dt.strftime("%Y-%m-%d %H:%M"))
             category_md = safe_md(category)
 
             message = (
                 f"{origin_flag} {category_md}\n"
                 f"📌 *{title}*\n"
-                f"📰 _{source}_ \\| 🕒 {published_time_str}\n\n"
+                f"📰 _{source}_ \\| 🕒 {pub_time}\n\n"
                 f"🧠 *Summary:* {summary}"
             )
 
@@ -197,14 +197,15 @@ async def send_daily_update(chat_id):
                     disable_web_page_preview=True
                 )
                 remember_url(article_url)
-                remember_url(title_raw)  # prevent future dups
+                remember_url(title_raw)
             except Exception as e:
-                logger.error(f"❌ Error sending update: {e}")
+                logger.error(f"❌ Error sending message: {e}")
                 fallback = f"{title_raw}\n\n{summary_raw}"
                 await main_bot.send_message(chat_id=chat_id, text=fallback)
 
     except Exception as e:
         logger.error(f"❌ Fetch error: {e}")
+
 
 
 
