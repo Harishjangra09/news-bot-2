@@ -53,12 +53,16 @@ def remember_url(url):
 
 def safe_md(text: str) -> str:
     """
-    Escapes all MarkdownV2 special characters required by Telegram.
+    Escapes MarkdownV2 characters required by Telegram properly.
     """
     if not text:
         return ""
-    escape_chars = r"_*[]()~`>#+=|{}.!-"
-    return re.sub(f"([{re.escape(escape_chars)}])", r"\\\1", text)
+    # Escape all special MarkdownV2 characters
+    escape_chars = r"_*[]()~`>#+=|{}.!"
+    text = re.sub(f"([{re.escape(escape_chars)}])", r"\\\1", text)
+    # Escape hyphen (-) separately and carefully to avoid regex range issues
+    return text.replace("-", "\\-")
+
 
 # === CLASSIFICATION ===
 TOP_COMPANIES = ["Apple", "Microsoft", "Amazon", "Tesla", "Google", "Meta", "Nvidia", "Netflix", "Intel", "IBM"]
@@ -102,7 +106,7 @@ async def send_daily_update(chat_id):
         )
 
         now = datetime.now(timezone.utc)
-        from_time = now - timedelta(hours=24)
+        from_time = now - timedelta(minutes=10)  # Only get fresh news from last 10 minutes
         url = (
             f"https://newsapi.org/v2/everything?q={query}&"
             f"from={from_time.isoformat()}&to={now.isoformat()}&"
