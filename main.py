@@ -5,7 +5,7 @@ import schedule
 import time
 import threading
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime,timedelta , timezone
 from collections import deque
 from telegram import Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -68,11 +68,16 @@ def get_all_financial_news():
         "bonds OR central bank OR RBI OR Fed OR crypto OR bitcoin OR ethereum OR "
         "tariffs OR monetary policy OR fiscal policy OR economy OR GDP OR recession"
     )
-    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # Calculate 24 hours ago in ISO format
+    now = datetime.now(timezone.utc)
+    from_time = now - timedelta(hours=24)
+    from_time_str = from_time.isoformat()
+
     url = (
         f"https://newsapi.org/v2/everything?"
         f"q={query}&"
-        f"from={today_str}&"
+        f"from={from_time_str}&"
         f"language=en&"
         f"pageSize=5&"
         f"sortBy=publishedAt&"
@@ -82,12 +87,12 @@ def get_all_financial_news():
     response = requests.get(url)
     articles = response.json().get("articles", [])
 
-    print(f"⏰ Checking news at {datetime.now()} — {len(articles)} articles found")
+    print(f"⏰ Checking news at {now} — {len(articles)} articles found")
 
     if not articles:
         return None
 
-    message = "📰 *Latest Financial News (Live):*\n\n"
+    message = "📰 *Latest Financial News (Last 24 Hours):*\n\n"
     new_found = False
 
     for a in articles:
