@@ -5,7 +5,7 @@ import schedule
 import time
 import threading
 import asyncio
-from datetime import datetime,timedelta , timezone
+from datetime import datetime, timezone, timedelta
 from collections import deque
 from telegram import Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -62,63 +62,72 @@ def remember_url(url):
         save_sent_urls(sent_news_urls)
 
 # === FETCH NEWS ===
-def get_all_financial_news():
-    query = (
-        "finance OR stock market OR inflation OR interest rates OR "
-        "bonds OR central bank OR RBI OR Fed OR crypto OR bitcoin OR ethereum OR "
-        "tariffs OR monetary policy OR fiscal policy OR economy OR GDP OR recession"
-    )
-
-    # Calculate 24 hours ago in ISO format
-    now = datetime.now(timezone.utc)
-    from_time = now - timedelta(hours=24)
-    from_time_str = from_time.isoformat()
-
-    url = (
-        f"https://newsapi.org/v2/everything?"
-        f"q={query}&"
-        f"from={from_time_str}&"
-        f"language=en&"
-        f"pageSize=5&"
-        f"sortBy=publishedAt&"
-        f"apiKey={NEWSAPI_KEY}"
-    )
-
-    response = requests.get(url)
-    articles = response.json().get("articles", [])
-
-    print(f"⏰ Checking news at {now} — {len(articles)} articles found")
-
-    if not articles:
-        return None
-
-    message = "📰 *Latest Financial News (Last 24 Hours):*\n\n"
-    new_found = False
-
-    for a in articles:
-        article_url = a.get("url")
-        if article_url in sent_news_urls:
-            continue
-
-        title = a.get("title", "No Title")
-        description = a.get("description", "")
-        content = a.get("content", "")
-        source = a.get("source", {}).get("name", "")
-        published = a.get("publishedAt", "")[:10]
-
-        message += (
-            f"📌 *{title}*\n"
-            f"📰 _{source}_ | 🗓️ {published}\n\n"
-            f"{description}\n\n"
-            f"📖 _{content}_\n"
-            f"🔗 [Read more]({article_url})\n"
-            f"━━━━━━━━━━━━━━━\n"
+async def send_daily_update(chat_id):
+    try:
+        query = (
+            "finance OR stock market OR inflation OR interest rates OR "
+            "bonds OR central bank OR RBI OR Fed OR crypto OR bitcoin OR ethereum OR "
+            "tariffs OR monetary policy OR fiscal policy OR economy OR GDP OR recession"
         )
 
-        remember_url(article_url)
-        new_found = True
+        now = datetime.now(timezone.utc)
+        from_time = now - timedelta(hours=24)
+        from_time_str = from_time.isoformat()
 
-    return message if new_found else None
+        url = (
+            f"https://newsapi.org/v2/everything?"
+            f"q={query}&"
+            f"from={from_time_str}&"
+            f"language=en&"
+            f"pageSize=10&"
+            f"sortBy=publishedAt&"
+            f"apiKey={NEWSAPI_KEY}"
+        )
+
+        response = requests.get(url)
+        articles = response.json().get("articles", [])
+
+        print(f"⏰ Checking news at {now} — {len(articles)} articles found")
+
+        if not articles:
+            print("⚠️ No new news to send.")
+            return
+
+        sent_count = 0
+
+        for a in articles:
+            article_url = a.get("url")
+            if article_url in sent_news_urls:
+                continue
+
+            title = a.get("title", "No Title")
+            description = a.get("description", "No summary available.")
+            source = a.get("source", {}).get("name", "")
+            published = a.get("publishedAt", "")[:10]
+
+            message = (
+                f"📌 *{title}*\n"
+                f"📰 _{source}_ | 🗓️ {published}\n\n"
+                f"🧠 *Summary:* {description.strip()}\n\n"
+                f"🔗 [Read Full Article]({article_url})"
+            )
+
+            await main_bot.send_message(
+                chat_id=chat_id,
+                text=message,
+                parse_mode="Markdown",
+                disable_web_page_preview=True
+            )
+
+            remember_url(article_url)
+            sent_count += 1
+
+        if sent_count == 0:
+            print("⚠️ No unseen news articles to send.")
+
+    except Exception as e:
+        print("❌ Update error:", e)
+
 
 # === SEND NEWS TO USER ===
 async def send_daily_update(chat_id):
