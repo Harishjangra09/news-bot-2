@@ -106,7 +106,7 @@ async def send_daily_update(chat_id):
         )
 
         now = datetime.now(timezone.utc)
-        from_time = now - timedelta(hours=1)
+        from_time = now - timedelta(hours=2)
         url = (
             f"https://newsapi.org/v2/everything?q={query}&"
             f"from={from_time.isoformat()}&to={now.isoformat()}&"
@@ -146,7 +146,7 @@ async def send_daily_update(chat_id):
             # Parse and validate published time
             try:
                 published_dt = datetime.strptime(published_raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                if published_dt < now - timedelta(hours=1):
+                if published_dt < now - timedelta(hours=2):
                     continue
             except Exception:
                 continue
