@@ -52,17 +52,10 @@ def remember_url(url):
             sent_news_urls.discard(oldest)
 
 def safe_md(text: str) -> str:
-    """
-    Escapes MarkdownV2 characters required by Telegram properly.
-    """
     if not text:
         return ""
-    # Escape all special MarkdownV2 characters
-    escape_chars = r"_*[]()~`>#+=|{}.!"
-    text = re.sub(f"([{re.escape(escape_chars)}])", r"\\\1", text)
-    # Escape hyphen (-) separately and carefully to avoid regex range issues
-    return text.replace("-", "\\-")
-
+    escape_chars = r"_*[]()~`>#+=|{}.!-"
+    return re.sub(f"([{re.escape(escape_chars)}])", r"\\\1", text)
 
 # === CLASSIFICATION ===
 TOP_COMPANIES = ["Apple", "Microsoft", "Amazon", "Tesla", "Google", "Meta", "Nvidia", "Netflix", "Intel", "IBM"]
@@ -106,7 +99,8 @@ async def send_daily_update(chat_id):
         )
 
         now = datetime.now(timezone.utc)
-        from_time = now - timedelta(hours=2)
+        from_time = now - timedelta(hours=2)  # CHANGED TO 2 HOURS
+
         url = (
             f"https://newsapi.org/v2/everything?q={query}&"
             f"from={from_time.isoformat()}&to={now.isoformat()}&"
@@ -118,7 +112,7 @@ async def send_daily_update(chat_id):
         logger.info(f"⏰ Checked at {now}, {len(articles)} articles found")
 
         if not articles:
-            await main_bot.send_message(chat_id=chat_id, text="⚠️ No new finance/economic news in the last hour.")
+            await main_bot.send_message(chat_id=chat_id, text="⚠️ No new finance/economic news in the last 2 hours.")
             return
 
         ALLOWED_CATEGORIES = [
@@ -139,11 +133,9 @@ async def send_daily_update(chat_id):
             published_raw = a.get("publishedAt", "")
             source_raw = a.get("source", {}).get("name", "")
 
-            # Skip banned sources
             if any(bad in source_raw.lower() for bad in BANNED_SOURCES):
                 continue
 
-            # Parse and validate published time
             try:
                 published_dt = datetime.strptime(published_raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
                 if published_dt < now - timedelta(hours=2):
@@ -151,16 +143,13 @@ async def send_daily_update(chat_id):
             except Exception:
                 continue
 
-            # Skip if already sent
             if article_url in sent_news_urls or title_raw in sent_news_urls:
                 continue
 
-            # Classify and filter category
             category = classify_article(title_raw, description_raw)
             if category not in ALLOWED_CATEGORIES:
                 continue
 
-            # Country flag
             origin_flag = "🌍"
             text = (title_raw + " " + description_raw).lower()
             for flag, keywords in COUNTRY_KEYWORDS.items():
@@ -168,14 +157,12 @@ async def send_daily_update(chat_id):
                     origin_flag = flag
                     break
 
-            # Build summary
             full_text = f"{description_raw} {content_raw}".strip()
             words = full_text.split()
             if len(words) < 10:
                 continue
             summary_raw = " ".join(words[:100]) + ("..." if len(words) > 100 else "")
 
-            # Escape Markdown
             title = safe_md(title_raw)
             summary = safe_md(summary_raw)
             source = safe_md(source_raw)
@@ -205,10 +192,6 @@ async def send_daily_update(chat_id):
 
     except Exception as e:
         logger.error(f"❌ Fetch error: {e}")
-
-
-
-
 
 # === COMMANDS ===
 async def start(update, context: ContextTypes.DEFAULT_TYPE):
@@ -251,8 +234,7 @@ async def scheduled_job():
                 await send_daily_update(chat_id=user_id)
             except Exception as e:
                 logger.error(f"❌ Failed to send to {user_id}: {e}")
-        await asyncio.sleep(600)  # 10 minutes
-
+        await asyncio.sleep(600)  # every 10 minutes
 
 # === MAIN ===
 def main():
