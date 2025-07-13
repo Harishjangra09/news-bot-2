@@ -12,11 +12,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# === BOT TOKENS ===
-MAIN_NEWS_BOT_TOKEN = os.getenv("MAIN_NEWS_BOT_TOKEN")  # First bot: sends news updates
-SUB_NOTIFY_BOT_TOKEN = os.getenv("SUB_NOTIFY_BOT_TOKEN")  # Second bot: for admin subscribe alert
+# === CONFIG ===
+FIRST_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")       # Bot that sends news updates
+SECOND_BOT_TOKEN = os.getenv("SECOND_BOT_TOKEN")    # Bot that receives new subscriber notifications
 NEWSAPI_KEY = os.getenv("NEWSAPI_KEY")
-ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
+NOTIFY_CHAT_ID = os.getenv("NOTIFY_CHAT_ID")
 SUBSCRIBERS_FILE = os.getenv("SUBSCRIBERS_FILE", "subscribed_users.json")
 
 # === LOGGING ===
@@ -28,8 +28,8 @@ subscribed_users = set()
 sent_news_deque = deque(maxlen=500)
 sent_news_urls = set()
 
-main_bot = Bot(token=MAIN_NEWS_BOT_TOKEN)
-notify_bot = Bot(token=SUB_NOTIFY_BOT_TOKEN)
+main_bot = Bot(token=FIRST_BOT_TOKEN)
+notify_bot = Bot(token=SECOND_BOT_TOKEN)
 
 # === HELPERS ===
 def load_subscribers():
@@ -52,11 +52,15 @@ def remember_url(url):
             sent_news_urls.discard(oldest)
 
 def safe_md(text: str) -> str:
-    """Escape Telegram MarkdownV2 special characters."""
+    """
+    Escapes all MarkdownV2 special characters required by Telegram.
+    """
+    if not text:
+        return ""
     escape_chars = r"_*[]()~`>#+=|{}.!-"
-    return re.sub(f"([{re.escape(escape_chars)}])", r"\\\1", text or "")
+    return re.sub(f"([{re.escape(escape_chars)}])", r"\\\1", text)
 
-# === CATEGORY TAGS ===
+# === NEWS CATEGORIES ===
 TOP_COMPANIES = ["Apple", "Microsoft", "Amazon", "Tesla", "Google", "Meta", "Nvidia", "Netflix", "Intel", "IBM"]
 CRYPTO_KEYWORDS = ["crypto", "bitcoin", "ethereum", "blockchain", "altcoin", "Web3", "DeFi", "Binance", "Coinbase"]
 ECONOMY_KEYWORDS = ["interest rate", "GDP", "inflation", "recession", "central bank", "Fed", "RBI", "tariff", "fiscal"]
@@ -87,8 +91,8 @@ def classify_article(title, description):
     else:
         return "📰 *Other News*"
 
-# === FETCH AND SEND NEWS ===
-async def send_news_update(chat_id):
+# === FETCH & SEND NEWS ===
+async def send_daily_update(chat_id):
     try:
         query = (
             "Apple OR Microsoft OR Amazon OR Tesla OR Nvidia OR "
@@ -99,11 +103,16 @@ async def send_news_update(chat_id):
 
         now = datetime.now(timezone.utc)
         from_time = now - timedelta(hours=24)
+        from_time_str = from_time.isoformat()
+        to_time_str = now.isoformat()
+
         url = (
             f"https://newsapi.org/v2/everything?"
             f"q={query}&"
-            f"from={from_time.isoformat()}&to={now.isoformat()}&"
-            f"language=en&sortBy=publishedAt&pageSize=20&"
+            f"from={from_time_str}&to={to_time_str}&"
+            f"language=en&"
+            f"pageSize=20&"
+            f"sortBy=publishedAt&"
             f"apiKey={NEWSAPI_KEY}"
         )
 
@@ -112,7 +121,7 @@ async def send_news_update(chat_id):
         logger.info(f"⏰ Checked at {now}, {len(articles)} articles found")
 
         if not articles:
-            await main_bot.send_message(chat_id=chat_id, text="⚠️ No new important news in last 24 hours.")
+            await main_bot.send_message(chat_id=chat_id, text="⚠️ No new news in the last 24 hours.")
             return
 
         for a in articles:
@@ -120,86 +129,100 @@ async def send_news_update(chat_id):
             if article_url in sent_news_urls:
                 continue
 
-            title = safe_md(a.get("title", "No Title"))
-            description = safe_md((a.get("description") or "").split(".")[0])
-            source = safe_md(a.get("source", {}).get("name", ""))
-            date = a.get("publishedAt", "")[:10]
-            category = safe_md(classify_article(title, description))
+            title_raw = a.get("title", "No Title")
+            description_raw = a.get("description", "No summary available.")
+            source_raw = a.get("source", {}).get("name", "")
+            published = a.get("publishedAt", "")[:10]
+
+            category = classify_article(title_raw, description_raw)
+            summary = description_raw.strip().split(".")[0]
+
+            title = safe_md(title_raw)
+            description = safe_md(summary)
+            source = safe_md(source_raw)
+            category_md = safe_md(category)
+            url_label = safe_md("Read Full Article")
 
             message = (
-                f"{category}\n"
+                f"{category_md}\n"
                 f"📌 *{title}*\n"
-                f"📰 _{source}_ \\| 🗓️ {date}\n\n"
+                f"📰 _{source}_ \\| 🗓️ {published}\n\n"
                 f"🧠 *Summary:* {description}\n\n"
-                f"🔗 [Read Full Article]({article_url})"
+                f"🔗 [{url_label}]({article_url})"
             )
 
-            await main_bot.send_message(
-                chat_id=chat_id,
-                text=message,
-                parse_mode="MarkdownV2",
-                disable_web_page_preview=True
-            )
-            remember_url(article_url)
+            try:
+                await main_bot.send_message(
+                    chat_id=chat_id,
+                    text=message,
+                    parse_mode="MarkdownV2",
+                    disable_web_page_preview=True
+                )
+                remember_url(article_url)
+            except Exception as e:
+                logger.error(f"❌ Error sending update: {e}")
+                fallback = f"{title_raw}\n{article_url}"
+                await main_bot.send_message(chat_id=chat_id, text=fallback)
 
     except Exception as e:
-        logger.error(f"❌ Error sending update: {e}")
+        logger.error(f"❌ Fetch error: {e}")
 
 # === COMMANDS ===
 async def start(update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
+    full_name = f"{user.first_name} {user.last_name or ''}".strip()
+    username = f"@{user.username}" if user.username else user.first_name
 
     if user_id not in subscribed_users:
         subscribed_users.add(user_id)
         save_subscribers(subscribed_users)
 
-    await update.message.reply_text("✅ Subscribed to finance & global news alerts!")
-    await send_news_update(chat_id=user_id)
+    await update.message.reply_text("✅ Subscribed to finance, crypto, and global economic news!")
+    await send_daily_update(chat_id=user_id)
 
     try:
-        full_name = f"{user.first_name} {user.last_name or ''}".strip()
-        username = f"@{user.username}" if user.username else user.first_name
         await notify_bot.send_message(
-            chat_id=ADMIN_CHAT_ID,
+            chat_id=NOTIFY_CHAT_ID,
             text=f"📢 New subscriber:\n👤 {full_name}\n🔹 {username}\n🆔 `{user_id}`",
             parse_mode="Markdown"
         )
     except Exception as e:
-        logger.warning(f"Notify failed: {e}")
+        logger.warning(f"⚠️ Notify failed: {e}")
 
-async def update_command(update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📡 Fetching fresh news...")
-    await send_news_update(chat_id=update.effective_user.id)
+async def manual_update(update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    await update.message.reply_text("📡 Fetching latest updates...")
+    await send_daily_update(chat_id=user_id)
 
 # === ERROR HANDLER ===
 async def error_handler(update, context):
-    logger.error(f"⚠️ Error: {context.error}", exc_info=context.error)
+    logger.error(f"⚠️ Uncaught error: {context.error}", exc_info=context.error)
 
 # === SCHEDULER ===
-async def news_scheduler():
+async def scheduled_job():
     while True:
         logger.info("⏰ Running scheduled update")
         for user_id in subscribed_users:
             try:
-                await send_news_update(chat_id=user_id)
+                await send_daily_update(chat_id=user_id)
             except Exception as e:
-                logger.error(f"❌ Failed for {user_id}: {e}")
-        await asyncio.sleep(600)  # every 10 minutes
+                logger.error(f"❌ Failed to send to {user_id}: {e}")
+        await asyncio.sleep(600)  # Every 10 minutes
 
-# === MAIN FUNCTION ===
+# === MAIN ===
 def main():
     global subscribed_users
     subscribed_users = load_subscribers()
 
-    app = ApplicationBuilder().token(MAIN_NEWS_BOT_TOKEN).build()
+    app = ApplicationBuilder().token(FIRST_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("update", update_command))
+    app.add_handler(CommandHandler("update", manual_update))
     app.add_error_handler(error_handler)
 
     async def on_startup(app):
         await app.bot.delete_webhook()
-        asyncio.create_task(news_scheduler())
+        asyncio.create_task(scheduled_job())
 
     app.post_init = on_startup
     app.run_polling()
