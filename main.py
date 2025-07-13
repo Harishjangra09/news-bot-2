@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 from collections import deque
 from telegram import Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Application
+from telegram.helpers import escape_markdown
 import logging
 from dotenv import load_dotenv
 
@@ -51,14 +52,13 @@ def remember_url(url):
             oldest = sent_news_deque.popleft()
             sent_news_urls.discard(oldest)
 
-# === NEWS CATEGORIES ===
+# === CATEGORIES ===
 TOP_COMPANIES = ["Apple", "Microsoft", "Amazon", "Tesla", "Google", "Meta", "Nvidia", "Netflix", "Intel", "IBM"]
 CRYPTO_KEYWORDS = ["crypto", "bitcoin", "ethereum", "blockchain", "altcoin", "Web3", "DeFi", "Binance", "Coinbase"]
 ECONOMY_KEYWORDS = ["interest rate", "GDP", "inflation", "recession", "central bank", "Fed", "RBI", "tariff", "fiscal"]
 
 def classify_article(title, description):
     text = (title + " " + description).lower()
-
     if any(company.lower() in text for company in TOP_COMPANIES):
         return "🏢 *Top Company News*"
     elif any(keyword in text for keyword in CRYPTO_KEYWORDS):
@@ -68,7 +68,7 @@ def classify_article(title, description):
     else:
         return "📰 *Other News*"
 
-# === FETCH + SEND ===
+# === FETCH AND SEND NEWS ===
 async def send_daily_update(chat_id):
     try:
         query = (
@@ -110,25 +110,27 @@ async def send_daily_update(chat_id):
             published = a.get("publishedAt", "")[:10]
             category = classify_article(title, description)
 
-            # Optional: Translate to Hindi using googletrans
-            # from googletrans import Translator
-            # translator = Translator()
-            # translated_summary = translator.translate(description, dest='hi').text
+            simplified = description.strip().split(".")[0]  # first sentence as summary
 
-            simplified = description.strip().split(".")[0]  # Take first sentence
+            # Escape markdown special characters
+            title = escape_markdown(title, version=2)
+            description = escape_markdown(simplified, version=2)
+            source = escape_markdown(source, version=2)
+            article_url = escape_markdown(article_url, version=2)
+            category = escape_markdown(category, version=2)
 
             message = (
                 f"{category}\n\n"
                 f"📌 *{title}*\n"
                 f"📰 _{source}_ | 🗓️ {published}\n\n"
-                f"🧠 *Summary:* {simplified}\n"
-                f"🔗 [Read More]({article_url})"
+                f"🧠 *Summary:* {description}\n\n"
+                f"🔗 [Read Full Article]({article_url})"
             )
 
             await main_bot.send_message(
                 chat_id=chat_id,
                 text=message,
-                parse_mode="Markdown",
+                parse_mode="MarkdownV2",
                 disable_web_page_preview=True
             )
 
@@ -165,14 +167,14 @@ async def manual_update(update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📡 Fetching latest updates...")
     await send_daily_update(chat_id=user_id)
 
-# === SCHEDULED JOB ===
+# === SCHEDULE ===
 async def scheduled_job(app: Application):
     while True:
         logger.info("⏰ Running scheduled job")
         for user_id in subscribed_users:
             logger.info(f"🔁 Sending to {user_id}")
             await send_daily_update(chat_id=user_id)
-        await asyncio.sleep(300)  # Every 5 minutes
+        await asyncio.sleep(300)
 
 # === MAIN ===
 def main():
