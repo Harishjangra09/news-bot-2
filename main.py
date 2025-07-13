@@ -13,8 +13,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # === CONFIG ===
-FIRST_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")       # Bot that sends news updates
-SECOND_BOT_TOKEN = os.getenv("SECOND_BOT_TOKEN")    # Bot that receives new subscriber notifications
+FIRST_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
+SECOND_BOT_TOKEN = os.getenv("SECOND_BOT_TOKEN")
 NEWSAPI_KEY = os.getenv("NEWSAPI_KEY")
 NOTIFY_CHAT_ID = os.getenv("NOTIFY_CHAT_ID")
 SUBSCRIBERS_FILE = os.getenv("SUBSCRIBERS_FILE", "subscribed_users.json")
@@ -60,7 +60,7 @@ def safe_md(text: str) -> str:
     escape_chars = r"_*[]()~`>#+=|{}.!-"
     return re.sub(f"([{re.escape(escape_chars)}])", r"\\\1", text)
 
-# === NEWS CATEGORIES ===
+# === CLASSIFICATION ===
 TOP_COMPANIES = ["Apple", "Microsoft", "Amazon", "Tesla", "Google", "Meta", "Nvidia", "Netflix", "Intel", "IBM"]
 CRYPTO_KEYWORDS = ["crypto", "bitcoin", "ethereum", "blockchain", "altcoin", "Web3", "DeFi", "Binance", "Coinbase"]
 ECONOMY_KEYWORDS = ["interest rate", "GDP", "inflation", "recession", "central bank", "Fed", "RBI", "tariff", "fiscal"]
@@ -91,7 +91,7 @@ def classify_article(title, description):
     else:
         return "📰 *Other News*"
 
-# === FETCH & SEND NEWS ===
+# === FETCH & SEND ===
 async def send_daily_update(chat_id):
     try:
         query = (
@@ -103,17 +103,10 @@ async def send_daily_update(chat_id):
 
         now = datetime.now(timezone.utc)
         from_time = now - timedelta(hours=24)
-        from_time_str = from_time.isoformat()
-        to_time_str = now.isoformat()
-
         url = (
-            f"https://newsapi.org/v2/everything?"
-            f"q={query}&"
-            f"from={from_time_str}&to={to_time_str}&"
-            f"language=en&"
-            f"pageSize=20&"
-            f"sortBy=publishedAt&"
-            f"apiKey={NEWSAPI_KEY}"
+            f"https://newsapi.org/v2/everything?q={query}&"
+            f"from={from_time.isoformat()}&to={now.isoformat()}&"
+            f"language=en&pageSize=20&sortBy=publishedAt&apiKey={NEWSAPI_KEY}"
         )
 
         response = requests.get(url)
@@ -184,8 +177,8 @@ async def start(update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await notify_bot.send_message(
             chat_id=NOTIFY_CHAT_ID,
-            text=f"📢 New subscriber:\n👤 {full_name}\n🔹 {username}\n🆔 `{user_id}`",
-            parse_mode="Markdown"
+            text=f"📢 New subscriber:\n👤 {safe_md(full_name)}\n🔹 {safe_md(username)}\n🆔 `{user_id}`",
+            parse_mode="MarkdownV2"
         )
     except Exception as e:
         logger.warning(f"⚠️ Notify failed: {e}")
@@ -208,7 +201,7 @@ async def scheduled_job():
                 await send_daily_update(chat_id=user_id)
             except Exception as e:
                 logger.error(f"❌ Failed to send to {user_id}: {e}")
-        await asyncio.sleep(600)  # Every 10 minutes
+        await asyncio.sleep(600)
 
 # === MAIN ===
 def main():
