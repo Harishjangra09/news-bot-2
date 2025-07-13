@@ -103,17 +103,10 @@ async def send_daily_update(chat_id):
 
         now = datetime.now(timezone.utc)
         from_time = now - timedelta(hours=24)
-        from_time_str = from_time.isoformat()
-        to_time_str = now.isoformat()
-
         url = (
-            f"https://newsapi.org/v2/everything?"
-            f"q={query}&"
-            f"from={from_time_str}&to={to_time_str}&"
-            f"language=en&"
-            f"pageSize=20&"
-            f"sortBy=publishedAt&"
-            f"apiKey={NEWSAPI_KEY}"
+            f"https://newsapi.org/v2/everything?q={query}&"
+            f"from={from_time.isoformat()}&to={now.isoformat()}&"
+            f"language=en&pageSize=20&sortBy=publishedAt&apiKey={NEWSAPI_KEY}"
         )
 
         response = requests.get(url)
@@ -132,32 +125,33 @@ async def send_daily_update(chat_id):
             title_raw = a.get("title", "No Title")
             description_raw = a.get("description", "")
             content_raw = a.get("content", "")
+            published = a.get("publishedAt", "")
             source_raw = a.get("source", {}).get("name", "")
-            published_raw = a.get("publishedAt", "")
-            published = datetime.fromisoformat(published_raw.replace("Z", "+00:00")).strftime("%Y-%m-%d %H:%M UTC")
 
-            # Detect originating country
-            combined_text = (title_raw + " " + description_raw).lower()
-            origin = "🌍 Global"
+            # Detect country flag and category
+            origin_flag = "🌍"
+            text = (title_raw + " " + description_raw).lower()
             for flag, keywords in COUNTRY_KEYWORDS.items():
-                if any(k.lower() in combined_text for k in keywords):
-                    origin = flag
+                if any(k.lower() in text for k in keywords):
+                    origin_flag = flag
                     break
 
-            # Create a clean 100-word summary
-            summary_text = (description_raw or content_raw or "")[:1200]  # Approx 100 words max
-            summary = ". ".join(summary_text.split(".")[:3]).strip()
-            if not summary:
-                summary = "No summary available."
+            # Generate 100-word summary
+            full_text = description_raw or content_raw or ""
+            words = full_text.strip().split()
+            summary_raw = " ".join(words[:100]) + ("..." if len(words) > 100 else "")
+            if not summary_raw:
+                summary_raw = "No summary available."
 
-            # Apply escaping
+            # Escape Markdown
             title = safe_md(title_raw)
-            summary = safe_md(summary)
+            summary = safe_md(summary_raw)
             source = safe_md(source_raw)
+            published_time = safe_md(published.replace("T", " ").replace("Z", "")[:16])
 
             message = (
-                f"{origin} *{title}*\n"
-                f"📰 _{source}_ \\| 🕒 {published}\n\n"
+                f"{origin_flag} *{title}*\n"
+                f"📰 _{source}_ \\| 🕒 {published_time}\n\n"
                 f"🧠 *Summary:* {summary}"
             )
 
@@ -171,11 +165,12 @@ async def send_daily_update(chat_id):
                 remember_url(article_url)
             except Exception as e:
                 logger.error(f"❌ Error sending update: {e}")
-                fallback = f"{title_raw}\n\n{summary}"
-                await main_bot.send_message(chat_id=chat_id, text=safe_md(fallback), parse_mode="MarkdownV2")
+                fallback = f"{title_raw}\n\n{summary_raw}"
+                await main_bot.send_message(chat_id=chat_id, text=fallback)
 
     except Exception as e:
         logger.error(f"❌ Fetch error: {e}")
+
 
 
 # === COMMANDS ===
