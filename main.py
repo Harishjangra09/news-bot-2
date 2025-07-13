@@ -106,11 +106,11 @@ async def send_daily_update(chat_id):
         )
 
         now = datetime.now(timezone.utc)
-        from_time = now - timedelta(minutes=15)  # send only fresh news
+        from_time = now - timedelta(minutes=15)
         url = (
             f"https://newsapi.org/v2/everything?q={query}&"
             f"from={from_time.isoformat()}&to={now.isoformat()}&"
-            f"language=en&pageSize=20&sortBy=publishedAt&apiKey={NEWSAPI_KEY}"
+            f"language=en&pageSize=30&sortBy=publishedAt&apiKey={NEWSAPI_KEY}"
         )
 
         response = requests.get(url)
@@ -121,7 +121,6 @@ async def send_daily_update(chat_id):
             await main_bot.send_message(chat_id=chat_id, text="⚠️ No new news in the last 15 minutes.")
             return
 
-        # Allowed categories
         ALLOWED_CATEGORIES = [
             "🏢 *Top Company News*", "🪙 *Crypto Market*", "🌍 *Global/Economic*",
             "🇺🇸 *Economic News*", "🇨🇳 *Economic News*", "🇯🇵 *Economic News*", 
@@ -134,20 +133,29 @@ async def send_daily_update(chat_id):
 
         for a in articles:
             article_url = a.get("url")
-            if article_url in sent_news_urls:
-                continue
-
-            title_raw = a.get("title", "No Title")
+            title_raw = a.get("title", "")
             description_raw = a.get("description", "")
             content_raw = a.get("content", "")
-            published = a.get("publishedAt", "")
+            published_raw = a.get("publishedAt", "")
             source_raw = a.get("source", {}).get("name", "")
 
-            # Skip banned sources
+            # Skip bad sources
             if any(bad in source_raw.lower() for bad in BANNED_SOURCES):
                 continue
 
-            # Classify and filter
+            # Skip if published time is more than 20 mins old
+            try:
+                published_time_dt = datetime.strptime(published_raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                if published_time_dt < now - timedelta(minutes=20):
+                    continue
+            except Exception:
+                continue
+
+            # Skip already sent (based on URL or title)
+            if article_url in sent_news_urls or title_raw in sent_news_urls:
+                continue
+
+            # Classification and filtering
             category = classify_article(title_raw, description_raw)
             if category not in ALLOWED_CATEGORIES:
                 continue
@@ -167,17 +175,17 @@ async def send_daily_update(chat_id):
                 continue
             summary_raw = " ".join(words[:100]) + ("..." if len(words) > 100 else "")
 
-            # Escape for MarkdownV2
+            # Markdown safe
             title = safe_md(title_raw)
             summary = safe_md(summary_raw)
             source = safe_md(source_raw)
-            published_time = safe_md(published.replace("T", " ").replace("Z", "")[:16])
+            published_time_str = safe_md(published_time_dt.strftime("%Y-%m-%d %H:%M"))
             category_md = safe_md(category)
 
             message = (
                 f"{origin_flag} {category_md}\n"
                 f"📌 *{title}*\n"
-                f"📰 _{source}_ \\| 🕒 {published_time}\n\n"
+                f"📰 _{source}_ \\| 🕒 {published_time_str}\n\n"
                 f"🧠 *Summary:* {summary}"
             )
 
@@ -189,6 +197,7 @@ async def send_daily_update(chat_id):
                     disable_web_page_preview=True
                 )
                 remember_url(article_url)
+                remember_url(title_raw)  # prevent future dups
             except Exception as e:
                 logger.error(f"❌ Error sending update: {e}")
                 fallback = f"{title_raw}\n\n{summary_raw}"
