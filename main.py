@@ -75,10 +75,14 @@ def classify_article(title, description):
 async def send_daily_update(chat_id):
     try:
         query = (
-            "Apple OR Microsoft OR Amazon OR Tesla OR Nvidia OR "
-            "Bitcoin OR Ethereum OR crypto OR blockchain OR "
-            "inflation OR interest rates OR GDP OR recession OR Fed OR RBI"
+             "Apple OR Microsoft OR Amazon OR Tesla OR Nvidia OR "
+             "Bitcoin OR Ethereum OR crypto OR blockchain OR "
+             "inflation OR interest rate OR GDP OR recession OR Fed OR RBI OR "
+             "US economy OR United States economy OR China economy OR Japan economy OR Germany economy OR "
+             "India economy OR UK economy OR United Kingdom economy OR France economy OR "
+             "Italy economy OR Brazil economy OR Canada economy"
         )
+
 
         now = datetime.now(timezone.utc)
         from_time = now - timedelta(hours=24)
