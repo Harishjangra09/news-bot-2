@@ -23,12 +23,11 @@ SUBSCRIBERS_FILE = os.getenv("SUBSCRIBERS_FILE", "subscribed_users.json")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# === GLOBAL STATE ===
+# === GLOBALS ===
 subscribed_users = set()
 sent_news_deque = deque(maxlen=500)
 sent_news_urls = set()
 
-# === BOTS ===
 main_bot = Bot(token=TELEGRAM_TOKEN)
 notify_bot = Bot(token=SECOND_BOT_TOKEN)
 
@@ -59,14 +58,30 @@ def safe_md(text: str) -> str:
 TOP_COMPANIES = ["Apple", "Microsoft", "Amazon", "Tesla", "Google", "Meta", "Nvidia", "Netflix", "Intel", "IBM"]
 CRYPTO_KEYWORDS = ["crypto", "bitcoin", "ethereum", "blockchain", "altcoin", "Web3", "DeFi", "Binance", "Coinbase"]
 ECONOMY_KEYWORDS = ["interest rate", "GDP", "inflation", "recession", "central bank", "Fed", "RBI", "tariff", "fiscal"]
+COUNTRY_KEYWORDS = {
+    "🇺🇸": ["US", "America", "United States", "Fed"],
+    "🇨🇳": ["China", "Beijing"],
+    "🇯🇵": ["Japan", "Tokyo", "Yen"],
+    "🇩🇪": ["Germany", "Berlin", "Bundesbank"],
+    "🇮🇳": ["India", "Delhi", "Mumbai", "RBI"],
+    "🇬🇧": ["UK", "Britain", "London", "BOE"],
+    "🇫🇷": ["France", "Paris"],
+    "🇮🇹": ["Italy", "Rome"],
+    "🇧🇷": ["Brazil", "Brasilia", "Bovespa"],
+    "🇨🇦": ["Canada", "Ottawa"]
+}
 
 def classify_article(title, description):
     text = (title + " " + description).lower()
+
     if any(company.lower() in text for company in TOP_COMPANIES):
         return "🏢 *Top Company News*"
     elif any(keyword in text for keyword in CRYPTO_KEYWORDS):
         return "🪙 *Crypto Market*"
     elif any(keyword in text for keyword in ECONOMY_KEYWORDS):
+        for flag, keywords in COUNTRY_KEYWORDS.items():
+            if any(k.lower() in text for k in keywords):
+                return f"{flag} *Economic News*"
         return "🌍 *Global/Economic*"
     else:
         return "📰 *Other News*"
@@ -75,14 +90,11 @@ def classify_article(title, description):
 async def send_daily_update(chat_id):
     try:
         query = (
-             "Apple OR Microsoft OR Amazon OR Tesla OR Nvidia OR "
-             "Bitcoin OR Ethereum OR crypto OR blockchain OR "
-             "inflation OR interest rate OR GDP OR recession OR Fed OR RBI OR "
-             "US economy OR United States economy OR China economy OR Japan economy OR Germany economy OR "
-             "India economy OR UK economy OR United Kingdom economy OR France economy OR "
-             "Italy economy OR Brazil economy OR Canada economy"
+            "Apple OR Microsoft OR Amazon OR Tesla OR Nvidia OR "
+            "Bitcoin OR Ethereum OR crypto OR blockchain OR "
+            "inflation OR interest rates OR GDP OR recession OR Fed OR RBI OR "
+            "United States OR China OR Japan OR Germany OR India OR UK OR France OR Italy OR Brazil OR Canada"
         )
-
 
         now = datetime.now(timezone.utc)
         from_time = now - timedelta(hours=24)
@@ -123,7 +135,7 @@ async def send_daily_update(chat_id):
             title = safe_md(title_raw)
             description = safe_md(summary)
             source = safe_md(source_raw)
-            escaped_url = article_url.replace(")", "\\)").replace("(", "\\(")  # escape only for link()
+            escaped_url = article_url.replace(")", "\\)").replace("(", "\\(")
             category_md = safe_md(category)
 
             message = (
@@ -157,7 +169,7 @@ async def start(update, context: ContextTypes.DEFAULT_TYPE):
         subscribed_users.add(user_id)
         save_subscribers(subscribed_users)
 
-    await update.message.reply_text("✅ Subscribed to top finance, company & crypto news!")
+    await update.message.reply_text("✅ Subscribed to finance, crypto, and global economic news!")
     await send_daily_update(chat_id=user_id)
 
     try:
@@ -174,14 +186,14 @@ async def manual_update(update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📡 Fetching latest updates...")
     await send_daily_update(chat_id=user_id)
 
-# === SCHEDULED JOB ===
+# === SCHEDULER ===
 async def scheduled_job():
     while True:
         logger.info("⏰ Running scheduled job")
         for user_id in subscribed_users:
             logger.info(f"🔁 Sending to {user_id}")
             await send_daily_update(chat_id=user_id)
-        await asyncio.sleep(600)  # every 10 minutes
+        await asyncio.sleep(600)
 
 # === MAIN ===
 def main():
@@ -194,7 +206,7 @@ def main():
 
     async def on_startup(app):
         await app.bot.delete_webhook()
-        asyncio.create_task(scheduled_job())  # ✅ avoids warning
+        asyncio.create_task(scheduled_job())
 
     app.post_init = on_startup
     app.run_polling()
