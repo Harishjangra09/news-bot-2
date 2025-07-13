@@ -20,6 +20,8 @@ NOTIFY_CHAT_ID = os.getenv("NOTIFY_CHAT_ID")
 SUBSCRIBERS_FILE = os.getenv("SUBSCRIBERS_FILE", "subscribed_users.json")
 
 # === LOGGING ===
+for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -52,7 +54,29 @@ def remember_url(url):
             sent_news_urls.discard(oldest)
 
 def safe_md(text: str) -> str:
-    return esc(text or "", version=2)
+    if not text:
+        return ""
+    return (
+        text.replace("\\", "\\\\")
+            .replace("_", "\\_")
+            .replace("*", "\\*")
+            .replace("[", "\\[")
+            .replace("]", "\\]")
+            .replace("(", "\\(")
+            .replace(")", "\\)")
+            .replace("~", "\\~")
+            .replace("`", "\\`")
+            .replace(">", "\\>")
+            .replace("#", "\\#")
+            .replace("+", "\\+")
+            .replace("-", "\\-")
+            .replace("=", "\\=")
+            .replace("|", "\\|")
+            .replace("{", "\\{")
+            .replace("}", "\\}")
+            .replace(".", "\\.")
+            .replace("!", "\\!")
+    )
 
 # === CATEGORIES ===
 TOP_COMPANIES = ["Apple", "Microsoft", "Amazon", "Tesla", "Google", "Meta", "Nvidia", "Netflix", "Intel", "IBM"]
@@ -73,7 +97,6 @@ COUNTRY_KEYWORDS = {
 
 def classify_article(title, description):
     text = (title + " " + description).lower()
-
     if any(company.lower() in text for company in TOP_COMPANIES):
         return "🏢 *Top Company News*"
     elif any(keyword in text for keyword in CRYPTO_KEYWORDS):
@@ -99,11 +122,12 @@ async def send_daily_update(chat_id):
         now = datetime.now(timezone.utc)
         from_time = now - timedelta(hours=24)
         from_time_str = from_time.isoformat()
+        to_time_str = now.isoformat()
 
         url = (
             f"https://newsapi.org/v2/everything?"
             f"q={query}&"
-            f"from={from_time_str}&"
+            f"from={from_time_str}&to={to_time_str}&"
             f"language=en&"
             f"pageSize=20&"
             f"sortBy=publishedAt&"
@@ -131,11 +155,10 @@ async def send_daily_update(chat_id):
             category = classify_article(title_raw, description_raw)
             summary = description_raw.strip().split(".")[0]
 
-            # Escape markdown-v2
             title = safe_md(title_raw)
             description = safe_md(summary)
             source = safe_md(source_raw)
-            escaped_url = article_url.replace(")", "\\)").replace("(", "\\(")
+            escaped_url = safe_md(article_url)
             category_md = safe_md(category)
 
             message = (
@@ -191,8 +214,11 @@ async def scheduled_job():
     while True:
         logger.info("⏰ Running scheduled job")
         for user_id in subscribed_users:
-            logger.info(f"🔁 Sending to {user_id}")
-            await send_daily_update(chat_id=user_id)
+            try:
+                logger.info(f"🔁 Sending to {user_id}")
+                await send_daily_update(chat_id=user_id)
+            except Exception as e:
+                logger.error(f"❌ Failed to send to {user_id}: {e}")
         await asyncio.sleep(600)
 
 # === MAIN ===
