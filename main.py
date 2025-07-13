@@ -158,15 +158,15 @@ async def send_daily_update(chat_id):
             title = safe_md(title_raw)
             description = safe_md(summary)
             source = safe_md(source_raw)
-            escaped_url = safe_md(article_url)
             category_md = safe_md(category)
+            url_label = safe_md("Read Full Article")  # only label gets escaped
 
             message = (
                 f"{category_md}\n"
                 f"📌 *{title}*\n"
                 f"📰 _{source}_ \\| 🗓️ {published}\n\n"
                 f"🧠 *Summary:* {description}\n\n"
-                f"🔗 [Read Full Article]({escaped_url})"
+                f"🔗 [{url_label}]({article_url})"
             )
 
             await main_bot.send_message(
@@ -209,6 +209,10 @@ async def manual_update(update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📡 Fetching latest updates...")
     await send_daily_update(chat_id=user_id)
 
+# === ERROR HANDLER ===
+async def error_handler(update, context):
+    logger.error(f"⚠️ Uncaught error: {context.error}", exc_info=context.error)
+
 # === SCHEDULER ===
 async def scheduled_job():
     while True:
@@ -219,7 +223,7 @@ async def scheduled_job():
                 await send_daily_update(chat_id=user_id)
             except Exception as e:
                 logger.error(f"❌ Failed to send to {user_id}: {e}")
-        await asyncio.sleep(600)
+        await asyncio.sleep(600)  # 10 minutes
 
 # === MAIN ===
 def main():
@@ -229,6 +233,7 @@ def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("update", manual_update))
+    app.add_error_handler(error_handler)
 
     async def on_startup(app):
         await app.bot.delete_webhook()
