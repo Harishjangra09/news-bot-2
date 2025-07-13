@@ -110,12 +110,9 @@ async def send_daily_update(chat_id):
             published = a.get("publishedAt", "")[:10]
             category = classify_article(title, description)
 
-            simplified = description.strip().split(".")[0]  # first sentence as summary
-
-            # Escape markdown special characters
-                        # Escape markdown special characters
+            # Escape all values for MarkdownV2
             title = esc(title, version=2)
-            description = esc(description, version=2)
+            description = esc(description.strip().split(".")[0], version=2)  # summary = first sentence
             source = esc(source, version=2)
             article_url = esc(article_url, version=2)
             category = esc(category, version=2)
@@ -131,12 +128,11 @@ async def send_daily_update(chat_id):
             await main_bot.send_message(
                 chat_id=chat_id,
                 text=message,
-                parse_mode="MarkdownV2",  # ⚠️ use MarkdownV2
+                parse_mode="MarkdownV2",
                 disable_web_page_preview=True
             )
 
             remember_url(article_url)
-
 
     except Exception as e:
         logger.error(f"❌ Error sending update: {e}")
@@ -169,7 +165,7 @@ async def manual_update(update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📡 Fetching latest updates...")
     await send_daily_update(chat_id=user_id)
 
-# === SCHEDULE ===
+# === SCHEDULER ===
 async def scheduled_job(app: Application):
     while True:
         logger.info("⏰ Running scheduled job")
@@ -185,6 +181,7 @@ def main():
     app.add_handler(CommandHandler("update", manual_update))
 
     async def on_startup(app):
+        await app.bot.delete_webhook()  # Clear any previous webhook if set
         app.create_task(scheduled_job(app))
 
     app.post_init = on_startup
