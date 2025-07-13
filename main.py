@@ -1,9 +1,6 @@
 import os
 import json
 import requests
-import schedule
-import time
-import threading
 import asyncio
 from datetime import datetime, timezone, timedelta
 from collections import deque
@@ -17,7 +14,14 @@ SECOND_BOT_TOKEN = '7635757636:AAFwFOjtKWF3XFZ0VYOEs8ICMnbVhLHWf_8'
 NOTIFY_CHAT_ID = '897358644'
 SUBSCRIBERS_FILE = "subscribed_users.json"
 
-# === LOAD & SAVE SUBSCRIBERS ===
+# === GLOBALS ===
+subscribed_users = set()
+sent_news_deque = deque(maxlen=500)
+sent_news_urls = set()
+main_bot = Bot(token=TELEGRAM_TOKEN)
+notify_bot = Bot(token=SECOND_BOT_TOKEN)
+
+# === Load/Save Subscribers ===
 def load_subscribers():
     try:
         with open(SUBSCRIBERS_FILE, "r") as f:
@@ -29,16 +33,9 @@ def save_subscribers(subscribers):
     with open(SUBSCRIBERS_FILE, "w") as f:
         json.dump(list(subscribers), f)
 
-# === GLOBALS ===
 subscribed_users = load_subscribers()
-sent_news_deque = deque(maxlen=500)
-sent_news_urls = set()
 
-# === BOTS ===
-main_bot = Bot(token=TELEGRAM_TOKEN)
-notify_bot = Bot(token=SECOND_BOT_TOKEN)
-
-# === REMEMBER URL FUNCTION ===
+# === Utility ===
 def remember_url(url):
     if url not in sent_news_urls:
         sent_news_urls.add(url)
@@ -47,7 +44,7 @@ def remember_url(url):
             oldest = sent_news_deque.popleft()
             sent_news_urls.discard(oldest)
 
-# === SEND NEWS TO USER ===
+# === News Sending ===
 async def send_daily_update(chat_id):
     try:
         query = (
@@ -75,11 +72,9 @@ async def send_daily_update(chat_id):
         print(f"⏰ Checking news at {now} — {len(articles)} articles found")
 
         if not articles:
-            print("⚠️ No new news to send.")
             return
 
         sent_count = 0
-
         for a in articles:
             article_url = a.get("url")
             if article_url in sent_news_urls:
@@ -107,13 +102,10 @@ async def send_daily_update(chat_id):
             remember_url(article_url)
             sent_count += 1
 
-        if sent_count == 0:
-            print("⚠️ No unseen news articles to send.")
-
     except Exception as e:
         print("❌ Update error:", e)
 
-# === /start COMMAND ===
+# === Command Handlers ===
 async def start(update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
@@ -137,7 +129,6 @@ async def start(update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print("❌ Error notifying admin:", e)
 
-# === /update COMMAND ===
 async def manual_update(update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     username = update.effective_user.username or "unknown"
@@ -153,38 +144,29 @@ async def manual_update(update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print("❌ Notify failed:", e)
 
-# === SCHEDULER ===
-def run_schedule():
-    def job():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        async def send_to_all():
-            print(f"⏰ Running schedule job at {time.ctime()}")
-            for user_id in subscribed_users:
-                print(f"🔁 Sending news to {user_id}")
+# === Async Scheduler (no threading) ===
+async def run_schedule_async():
+    while True:
+        print(f"⏰ Running schedule job at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        for user_id in subscribed_users:
+            print(f"🔁 Sending news to {user_id}")
+            try:
                 await send_daily_update(chat_id=user_id)
+            except Exception as e:
+                print(f"❌ Error sending to {user_id}: {e}")
+        await asyncio.sleep(300)  # Wait 5 minutes
 
-        loop.run_until_complete(send_to_all())
-        loop.close()
-
-    schedule.every(5).minutes.do(job)
-
-    def schedule_loop():
-        while True:
-            schedule.run_pending()
-            time.sleep(60)
-
-    threading.Thread(target=schedule_loop, name="schedule_loop", daemon=True).start()
-
-# === MAIN ===
-def main():
+# === Main Entry Point ===
+async def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("update", manual_update))
 
-    run_schedule()
-    app.run_polling()
+    # Start background scheduler
+    asyncio.create_task(run_schedule_async())
+
+    print("✅ Bot started. Listening for commands and sending scheduled news...")
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
