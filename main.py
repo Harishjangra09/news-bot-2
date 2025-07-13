@@ -106,7 +106,7 @@ async def send_daily_update(chat_id):
         )
 
         now = datetime.now(timezone.utc)
-        from_time = now - timedelta(minutes=10)  # Only get fresh news from last 10 minutes
+        from_time = now - timedelta(minutes=15)  # send only fresh news
         url = (
             f"https://newsapi.org/v2/everything?q={query}&"
             f"from={from_time.isoformat()}&to={now.isoformat()}&"
@@ -118,8 +118,19 @@ async def send_daily_update(chat_id):
         logger.info(f"⏰ Checked at {now}, {len(articles)} articles found")
 
         if not articles:
-            await main_bot.send_message(chat_id=chat_id, text="⚠️ No new news in the last 24 hours.")
+            await main_bot.send_message(chat_id=chat_id, text="⚠️ No new news in the last 15 minutes.")
             return
+
+        # Allowed categories
+        ALLOWED_CATEGORIES = [
+            "🏢 *Top Company News*", "🪙 *Crypto Market*", "🌍 *Global/Economic*",
+            "🇺🇸 *Economic News*", "🇨🇳 *Economic News*", "🇯🇵 *Economic News*", 
+            "🇩🇪 *Economic News*", "🇮🇳 *Economic News*", "🇬🇧 *Economic News*",
+            "🇫🇷 *Economic News*", "🇮🇹 *Economic News*", "🇧🇷 *Economic News*", 
+            "🇨🇦 *Economic News*"
+        ]
+
+        BANNED_SOURCES = ["slickdeals", "buzzfeed", "espn", "goal.com", "vogue", "elle"]
 
         for a in articles:
             article_url = a.get("url")
@@ -132,7 +143,16 @@ async def send_daily_update(chat_id):
             published = a.get("publishedAt", "")
             source_raw = a.get("source", {}).get("name", "")
 
-            # Detect country flag and category
+            # Skip banned sources
+            if any(bad in source_raw.lower() for bad in BANNED_SOURCES):
+                continue
+
+            # Classify and filter
+            category = classify_article(title_raw, description_raw)
+            if category not in ALLOWED_CATEGORIES:
+                continue
+
+            # Country flag
             origin_flag = "🌍"
             text = (title_raw + " " + description_raw).lower()
             for flag, keywords in COUNTRY_KEYWORDS.items():
@@ -140,21 +160,23 @@ async def send_daily_update(chat_id):
                     origin_flag = flag
                     break
 
-            # Generate 100-word summary
-            full_text = description_raw or content_raw or ""
-            words = full_text.strip().split()
+            # Smart 100-word summary
+            full_text = f"{description_raw} {content_raw}".strip()
+            words = full_text.split()
+            if len(words) < 10:
+                continue
             summary_raw = " ".join(words[:100]) + ("..." if len(words) > 100 else "")
-            if not summary_raw:
-                summary_raw = "No summary available."
 
-            # Escape Markdown
+            # Escape for MarkdownV2
             title = safe_md(title_raw)
             summary = safe_md(summary_raw)
             source = safe_md(source_raw)
             published_time = safe_md(published.replace("T", " ").replace("Z", "")[:16])
+            category_md = safe_md(category)
 
             message = (
-                f"{origin_flag} *{title}*\n"
+                f"{origin_flag} {category_md}\n"
+                f"📌 *{title}*\n"
                 f"📰 _{source}_ \\| 🕒 {published_time}\n\n"
                 f"🧠 *Summary:* {summary}"
             )
@@ -174,6 +196,7 @@ async def send_daily_update(chat_id):
 
     except Exception as e:
         logger.error(f"❌ Fetch error: {e}")
+
 
 
 
@@ -218,7 +241,8 @@ async def scheduled_job():
                 await send_daily_update(chat_id=user_id)
             except Exception as e:
                 logger.error(f"❌ Failed to send to {user_id}: {e}")
-        await asyncio.sleep(600)
+        await asyncio.sleep(600)  # 10 minutes
+
 
 # === MAIN ===
 def main():
